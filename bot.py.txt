@@ -13,7 +13,8 @@ def run_web_server():
     server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
     server.serve_forever()
 
-threading.Thread(target=run_web_server, daemon=True).start()import logging
+threading.Thread(target=run_web_server, daemon=True).start()
+import logging
 import pandas as pd
 import ta
 import requests
