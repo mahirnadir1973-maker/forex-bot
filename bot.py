@@ -8,7 +8,6 @@ import ta
 
 logging.basicConfig(level=logging.INFO)
 
-# Analiz olunacaq cütlüklər və Qızıl
 PAIRS = {
     "EUR/USD": "EURUSD=X",
     "GBP/USD": "GBPUSD=X",
@@ -32,23 +31,23 @@ def analyze_pair(ticker_symbol):
         ema_fast = ta.trend.EMAIndicator(close=close, window=9).ema_indicator().iloc[-1]
         ema_slow = ta.trend.EMAIndicator(close=close, window=21).ema_indicator().iloc[-1]
         
-        # ATR hesablanması (Stop Loss və Take Profit məsafəsi üçün)
         high = data['High'].squeeze()
         low = data['Low'].squeeze()
         atr = ta.volatility.AverageTrueRange(high=high, low=low, close=close, window=14).average_true_range().iloc[-1]
         
-        if rsi < 40 and ema_fast > ema_slow:
-            sl = current_price - (atr * 1.5)
-            tp = current_price + (atr * 3.0)
+        # Daha elastik və aktiv siqnal şərtləri
+        if rsi < 48 or (ema_fast > ema_slow and rsi < 55):
+            sl = current_price - (atr * 1.2)
+            tp = current_price + (atr * 2.4)
             return {
                 "status": "🟢 ALIŞ (BUY)",
                 "entry": current_price,
                 "sl": sl,
                 "tp": tp
             }
-        elif rsi > 60 and ema_fast < ema_slow:
-            sl = current_price + (atr * 1.5)
-            tp = current_price - (atr * 3.0)
+        elif rsi > 52 or (ema_fast < ema_slow and rsi > 45):
+            sl = current_price + (atr * 1.2)
+            tp = current_price - (atr * 2.4)
             return {
                 "status": "🔴 SATIŞ (SELL)",
                 "entry": current_price,
@@ -60,7 +59,7 @@ def analyze_pair(ticker_symbol):
                 "status": "⚪ NEUTR (Gözlə)",
                 "details": None
             }
-    except Exception as e:
+    except Exception:
         return {"status": "Xəta baş verdi", "details": None}
 
 async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
