@@ -143,4 +143,17 @@ def main():
     app.run_polling()
 
 if __name__ == "__main__":
+def main():
+    token = os.environ.get("TELEGRAM_TOKEN", "").strip()
+    if not token:
+        raise ValueError("TELEGRAM_TOKEN tapılmadı! Zəhmət olmasa mühit dəyişəninə əlavə edin.")
+        
+    app = Application.builder().token(token).build()
+    
+    app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("signal", signal_command))
+    
+    app.run_polling()
+
+if __name__ == "__main__":
     main()
