@@ -29,7 +29,7 @@ def clean_data(df):
         df.columns = df.columns.get_level_values(0)
     return df
 
-def analyze_best_pair():
+def analyze_all_valid_pairs():
     candidates = []
 
     for name, ticker in PAIRS.items():
@@ -59,10 +59,10 @@ def analyze_best_pair():
             adx = adx_ind.adx().iloc[-1]
             ema_daily = ta.trend.EMAIndicator(close=close_1d, window=50).ema_indicator().iloc[-1]
 
-            # Yatay bazar filtri
             if pd.isna(rsi) or pd.isna(ema_fast) or pd.isna(ema_slow) or pd.isna(atr) or pd.isna(adx) or pd.isna(ema_daily):
                 continue
 
+            # Yatay bazar filtri
             if adx < 20:
                 continue
 
@@ -98,43 +98,48 @@ def analyze_best_pair():
             continue
 
     if candidates:
+        # Skoru en yüksek olandan en düşüğe doğru sırala
         candidates.sort(key=lambda x: x['score'], reverse=True)
-        return candidates[0]
+        return candidates
 
-    return None
+    return []
 
 async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🔎 ADX Trend Gücü və Günlük Trend təsdiqi ilə ƏN AŞAĞI RİSKLİ siqnal seçilir...")
+    await update.message.reply_text("🔎 13 parite analiz edilir və doğruluq skoru en yüksek olanlar seçilir...")
 
     try:
-        best = analyze_best_pair()
+        candidates = analyze_all_valid_pairs()
 
-        if best:
-            is_jpy_or_metal = "JPY" in best['name'] or "QIZIL" in best['name'] or "GÜMÜŞ" in best['name']
-            entry = f"{best['entry']:.2f}" if is_jpy_or_metal else f"{best['entry']:.5f}"
-            sl = f"{best['sl']:.2f}" if is_jpy_or_metal else f"{best['sl']:.5f}"
-            tp = f"{best['tp']:.2f}" if is_jpy_or_metal else f"{best['tp']:.5f}"
-
-            msg = (
-                f"🏆 **ƏN AŞAĞI RİSKLİ VƏ İDEAL SİQNAL TAPILDI** 🏆\n\n"
-                f"📌 **Parite:** {best['name']}\n"
-                f"📊 **Yön:** {'🟢 ALIŞ (BUY)' if best['direction'] == 'BUY' else '🔴 SATIŞ (SELL)'}\n"
-                f"💪 **Trend Gücü (ADX):** {best['adx']} / 100\n\n"
-                f"🔹 **Entry:** `{entry}`\n"
-                f"🛑 **Stop Loss (SL):** `{sl}`\n"
-                f"🎯 **Take Profit (TP):** `{tp}`\n\n"
-                f"🛡️ *Bu siqnal Günlük Trend və ADX süzgəcindən keçərək seçilmişdir.*"
-            )
+        if candidates:
+            msg = f"🏆 **YÜKSƏK DOĞRULUQLU SİQNAL LİSTƏSİ ({len(candidates)} ƏDƏD)** 🏆\n\n"
+            
+            for idx, item in enumerate(candidates, 1):
+                is_jpy_or_metal = "JPY" in item['name'] or "QIZIL" in item['name'] or "GÜMÜŞ" in item['name']
+                entry = f"{item['entry']:.2f}" if is_jpy_or_metal else f"{item['entry']:.5f}"
+                sl = f"{item['sl']:.2f}" if is_jpy_or_metal else f"{item['sl']:.5f}"
+                tp = f"{item['tp']:.2f}" if is_jpy_or_metal else f"{item['tp']:.5f}"
+                
+                msg += (
+                    f"#{idx} 📌 **Parite:** {item['name']} (Skor: {item['score']})\n"
+                    f"📊 **Yön:** {'🟢 ALIŞ (BUY)' if item['direction'] == 'BUY' else '🔴 SATIŞ (SELL)'}\n"
+                    f"💪 **Trend Gücü (ADX):** {item['adx']} / 100\n"
+                    f"🔹 **Entry:** `{entry}`\n"
+                    f"🛑 **Stop Loss (SL):** `{sl}`\n"
+                    f"🎯 **Take Profit (TP):** `{tp}`\n"
+                    f"-----------------------------------\n"
+                )
+            
+            msg += "🛡️ *Siyahı ən yüksek skorlu və aşağı riskli paritedən başlayaraq sıralanmışdır.*"
         else:
-            msg = "🛡️ **RİSK XƏBƏRDARLIĞI:** Hazırda bazarda yatay hərəkət (ADX low) var və ya böyük trendlə kəsişən aşağı riskli siqnal yoxdur. **GÖZLƏMƏK ƏN TƏHLÜKƏSİZİDİR**."
+            msg = "🛡️ **RİSK XƏBƏRDARLIĞI:** Hazırda 13 paritenin heç birində təhlükəsiz trend şərti ödənmir. **GÖZLƏMƏK ƏN TƏHLÜKƏSİZİDİR**."
 
         await update.message.reply_text(msg, parse_mode="Markdown")
     except Exception as e:
         logging.error(f"Signal xətası: {e}")
-        await update.message.reply_text("⚠️ Siqnal hazırlanarkən xəta baş verdi (Bazar bağlı ola bilər və ya məlumat mənbəyi mövcud deyil).")
+        await update.message.reply_text("⚠️ Siqnal hazırlanarkən xəta baş verdi.")
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Bot aktivdir! /signal yazaraq ən güclü siqnalı ala bilərsiniz.")
+    await update.message.reply_text("Bot aktivdir! /signal yazaraq ən güclü siqnalları ala bilərsiniz.")
 
 def main():
     token = os.environ.get("TELEGRAM_TOKEN", "").strip()
