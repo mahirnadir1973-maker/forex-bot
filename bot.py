@@ -18,106 +18,89 @@ PAIRS = {
     "QIZIL (XAU/USD)": "GC=F"
 }
 
-def analyze_pair(ticker_symbol):
-    try:
-        data = yf.download(ticker_symbol, period="10d", interval="1h", progress=False)
-        if data.empty or len(data) < 30:
-            return {"status": "Məlumat alınamadı", "details": None}
-        
-        close = data['Close'].squeeze()
-        high = data['High'].squeeze()
-        low = data['Low'].squeeze()
-        current_price = float(close.iloc[-1])
-        
-        rsi = ta.momentum.RSIIndicator(close=close, window=14).rsi().iloc[-1]
-        ema_fast = ta.trend.EMAIndicator(close=close, window=9).ema_indicator().iloc[-1]
-        ema_slow = ta.trend.EMAIndicator(close=close, window=21).ema_indicator().iloc[-1]
-        atr = ta.volatility.AverageTrueRange(high=high, low=low, close=close, window=14).average_true_range().iloc[-1]
-        
-        # Yüksək dəqiqlikli (Low Risk) 80%+ şərtləri
-        if rsi <= 35 and ema_fast > ema_slow:
-            sl = current_price - (atr * 1.5)
-            tp = current_price + (atr * 3.0)
-            return {
-                "status": "🟢 ALIŞ (BUY) - [Aşağı Risk]",
-                "entry": current_price,
-                "sl": sl,
-                "tp": tp
-            }
-        elif rsi >= 65 and ema_fast < ema_slow:
-            sl = current_price + (atr * 1.5)
-            tp = current_price - (atr * 3.0)
-            return {
-                "status": "🔴 SATIŞ (SELL) - [Aşağı Risk]",
-                "entry": current_price,
-                "sl": sl,
-                "tp": tp
-            }
-        else:
-            return {
-                "status": "⚪ NEUTR (Gözlə)",
-                "details": None
-            }
-    except Exception:
-        return {"status": "Xəta baş verdi", "details": None}
-
-# Avtomatik skan edən funksiya (Hər 15 dəqiqədən bir işləyir)
-async def auto_scan_job(context: ContextTypes.DEFAULT_TYPE):
-    chat_id = context.job.chat_id
-    signals_found = []
+def analyze_best_pair():
+    candidates = []
     
     for name, ticker in PAIRS.items():
-        res = analyze_pair(ticker)
-        status = res["status"]
-        
-        if "BUY" in status or "SELL" in status:
-            entry = f"{res['entry']:.5f}" if "USD" in name else f"{res['entry']:.2f}"
-            sl = f"{res['sl']:.5f}" if "USD" in name else f"{res['sl']:.2f}"
-            tp = f"{res['tp']:.5f}" if "USD" in name else f"{res['tp']:.2f}"
+        try:
+            data = yf.download(ticker, period="10d", interval="1h", progress=False)
+            if data.empty or len(data) < 30:
+                continue
             
-            signals_found.append(
-                f"🚨 **YENİ AVTO-SİQNAL (80%+ Accuracy)** 🚨\n\n"
-                f"• **{name}**: {status}\n"
-                f"  └ 📌 *Entry*: `{entry}` | 🛑 *SL*: `{sl}` | 🎯 *TP*: `{tp}`"
-            )
+            close = data['Close'].squeeze()
+            high = data['High'].squeeze()
+            low = data['Low'].squeeze()
+            current_price = float(close.iloc[-1])
             
-    for sig in signals_found:
-        await context.bot.send_message(chat_id=chat_id, text=sig, parse_mode="Markdown")
+            # İndikatör Hesaplamaları
+            rsi = ta.momentum.RSIIndicator(close=close, window=14).rsi().iloc[-1]
+            ema_fast = ta.trend.EMAIndicator(close=close, window=9).ema_indicator().iloc[-1]
+            ema_slow = ta.trend.EMAIndicator(close=close, window=21).ema_indicator().iloc[-1]
+            atr = ta.volatility.AverageTrueRange(high=high, low=low, close=close, window=14).average_true_range().iloc[-1]
+            
+            score = 0
+            direction = None
+            
+            # BUY (Alış) Şartları ve Puanlama
+            if rsi <= 38 and ema_fast > ema_slow:
+                score = round((40 - rsi) * 2.5 + 20, 1)
+                direction = "BUY"
+                sl = current_price - (atr * 1.5)
+                tp = current_price + (atr * 3.0)
+            
+            # SELL (Satış) Şartları ve Puanlama
+            elif rsi >= 62 and ema_fast < ema_slow:
+                score = round((rsi - 60) * 2.5 + 20, 1)
+                direction = "SELL"
+                sl = current_price + (atr * 1.5)
+                tp = current_price - (atr * 3.0)
+                
+            if direction and score >= 30:
+                candidates.append({
+                    "name": name,
+                    "direction": direction,
+                    "score": score,
+                    "entry": current_price,
+                    "sl": sl,
+                    "tp": tp
+                })
+        except Exception:
+            continue
+            
+    # En yüksek başarı puanına (en düşük riske) sahip pariteyi seçiyoruz
+    if candidates:
+        candidates.sort(key=lambda x: x['score'], reverse=True)
+        return candidates[0]
+    
+    return None
 
 async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📊 Bütün cütlüklər yüksək dəqiqlikli (Low Risk) filtirlərlə analiz edilir...")
+    await update.message.reply_text("🔎 Bütün Forex cütlükləri və Qızıl skan edilir, ƏN AZ RİSKLİ siqnal seçilir...")
     
-    report = "📈 **YÜKSƏK DƏQİQLİKLİ SİQNALLAR (80%+ Accuracy)** 📉\n\n"
-    for name, ticker in PAIRS.items():
-        res = analyze_pair(ticker)
-        status = res["status"]
+    best = analyze_best_pair()
+    
+    if best:
+        entry = f"{best['entry']:.5f}" if "USD" in best['name'] else f"{best['entry']:.2f}"
+        sl = f"{best['sl']:.5f}" if "USD" in best['name'] else f"{best['sl']:.2f}"
+        tp = f"{best['tp']:.5f}" if "USD" in best['name'] else f"{best['tp']:.2f}"
         
-        if "BUY" in status or "SELL" in status:
-            entry = f"{res['entry']:.5f}" if "USD" in name else f"{res['entry']:.2f}"
-            sl = f"{res['sl']:.5f}" if "USD" in name else f"{res['sl']:.2f}"
-            tp = f"{res['tp']:.5f}" if "USD" in name else f"{res['tp']:.2f}"
-            
-            report += (
-                f"• **{name}**: {status}\n"
-                f"  └ 📌 *Entry*: `{entry}` | 🛑 *SL*: `{sl}` | 🎯 *TP*: `{tp}`\n\n"
-            )
-        else:
-            report += f"• **{name}**: {status}\n"
+        msg = (
+            f"🏆 **ƏN AŞAĞI RİSKLİ SİQNAL TAPILDI** 🏆\n\n"
+            f"📌 **Parite:** {best['name']}\n"
+            f"📊 **Yön:** {'🟢 ALIŞ (BUY)' if best['direction'] == 'BUY' else '🔴 SATIŞ (SELL)'}\n"
+            f"🎯 **Uğur/Dəqiqlik Xalı:** {best['score']} / 100\n\n"
+            f"🔹 **Entry:** `{entry}`\n"
+            f"🛑 **Stop Loss (SL):** `{sl}`\n"
+            f"🎯 **Take Profit (TP):** `{tp}`\n\n"
+            f"💡 *Qeyd: Bütün cütlüklər arasında risk/mənfəət nisbəti ən ideal olanı budur.*"
+        )
+    else:
+        msg = "🛡️ **RİSK XƏBƏRDARLIĞI:** Hazırda bütün cütlüklərdə risk yüksəkdir və ya net trend yoxdur. Ən təhlükəsiz addım **GÖZLƏMƏKDİR**."
         
-    await update.message.reply_text(report, parse_mode="Markdown")
+    await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    chat_id = update.effective_chat.id
-    # Avtomatik bildirişləri aktivləşdir
-    if context.job_queue:
-        # Əgər əvvəldən olan job varsa silirik
-        current_jobs = context.job_queue.get_jobs_by_name(str(chat_id))
-        for job in current_jobs:
-            job.schedule_removal()
-        # Hər 15 dəqiqədən (900 san) bir skan et
-        context.job_queue.run_repeating(auto_scan_job, interval=900, first=10, chat_id=chat_id, name=str(chat_id))
-        
-    await update.message.reply_text("Bot aktivdir! 24/7 avtomatik skan rejimi qoşuldu. Həmçinin istədiyiniz vaxt /signal yaza bilərsiniz.")
+    await update.message.reply_text("Bot aktivdir! Bütün cütlüklər arasından ən az riskli siqnalı tapmaq üçün /signal yazın.")
 
 def main():
     token = os.environ.get("TELEGRAM_TOKEN", "8814130355:AAEecRTzl8Yt6j-0hlE7VjBSbQY16t0SFwg")
