@@ -8,14 +8,26 @@ import ta
 
 logging.basicConfig(level=logging.INFO)
 
+# Genişləndirilmiş Cütlüklər Siyahısı
 PAIRS = {
+    # Əsas cütlüklər (Majors)
     "EUR/USD": "EURUSD=X",
     "GBP/USD": "GBPUSD=X",
     "USD/JPY": "JPY=X",
     "AUD/USD": "AUDUSD=X",
     "USD/CAD": "CAD=X",
     "USD/CHF": "CHF=X",
-    "QIZIL (XAU/USD)": "GC=F"
+    "NZD/USD": "NZDUSD=X",
+    
+    # Kross cütlüklər (Minors)
+    "EUR/GBP": "EURGBP=X",
+    "EUR/JPY": "EURJPY=X",
+    "GBP/JPY": "GBPJPY=X",
+    "AUD/JPY": "AUDJPY=X",
+    
+    # Qiymətli Metallar
+    "QIZIL (XAU/USD)": "GC=F",
+    "GÜMÜŞ (XAG/USD)": "SI=F"
 }
 
 def analyze_best_pair():
@@ -32,7 +44,6 @@ def analyze_best_pair():
             low = data['Low'].squeeze()
             current_price = float(close.iloc[-1])
             
-            # İndikatör Hesaplamaları
             rsi = ta.momentum.RSIIndicator(close=close, window=14).rsi().iloc[-1]
             ema_fast = ta.trend.EMAIndicator(close=close, window=9).ema_indicator().iloc[-1]
             ema_slow = ta.trend.EMAIndicator(close=close, window=21).ema_indicator().iloc[-1]
@@ -41,21 +52,21 @@ def analyze_best_pair():
             score = 0
             direction = None
             
-            # BUY (Alış) Şartları ve Puanlama
-            if rsi <= 38 and ema_fast > ema_slow:
-                score = round((40 - rsi) * 2.5 + 20, 1)
+            # BUY Təhlili
+            if rsi <= 45 and ema_fast > ema_slow:
+                score = round((50 - rsi) * 2 + 10, 1)
                 direction = "BUY"
                 sl = current_price - (atr * 1.5)
                 tp = current_price + (atr * 3.0)
             
-            # SELL (Satış) Şartları ve Puanlama
-            elif rsi >= 62 and ema_fast < ema_slow:
-                score = round((rsi - 60) * 2.5 + 20, 1)
+            # SELL Təhlili
+            elif rsi >= 55 and ema_fast < ema_slow:
+                score = round((rsi - 50) * 2 + 10, 1)
                 direction = "SELL"
                 sl = current_price + (atr * 1.5)
                 tp = current_price - (atr * 3.0)
                 
-            if direction and score >= 30:
+            if direction:
                 candidates.append({
                     "name": name,
                     "direction": direction,
@@ -67,28 +78,28 @@ def analyze_best_pair():
         except Exception:
             continue
             
-    # En yüksek başarı puanına (en düşük riske) sahip pariteyi seçiyoruz
     if candidates:
+        # Aralarında riski ən aşağı olanı (ən yüksək xallını) seçirik
         candidates.sort(key=lambda x: x['score'], reverse=True)
         return candidates[0]
     
     return None
 
 async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🔎 Bütün Forex cütlükləri və Qızıl skan edilir, ƏN AZ RİSKLİ siqnal seçilir...")
+    await update.message.reply_text("🔎 Bütün Forex cütlükləri və Metallar skan edilir, ƏN AŞAĞI RİSKLİ siqnal seçilir...")
     
     best = analyze_best_pair()
     
     if best:
-        entry = f"{best['entry']:.5f}" if "USD" in best['name'] else f"{best['entry']:.2f}"
-        sl = f"{best['sl']:.5f}" if "USD" in best['name'] else f"{best['sl']:.2f}"
-        tp = f"{best['tp']:.5f}" if "USD" in best['name'] else f"{best['tp']:.2f}"
+        is_jpy_or_metal = "JPY" in best['name'] or "QIZIL" in best['name'] or "GÜMÜŞ" in best['name']
+        entry = f"{best['entry']:.2f}" if is_jpy_or_metal else f"{best['entry']:.5f}"
+        sl = f"{best['sl']:.2f}" if is_jpy_or_metal else f"{best['sl']:.5f}"
+        tp = f"{best['tp']:.2f}" if is_jpy_or_metal else f"{best['tp']:.5f}"
         
         msg = (
             f"🏆 **ƏN AŞAĞI RİSKLİ SİQNAL TAPILDI** 🏆\n\n"
             f"📌 **Parite:** {best['name']}\n"
-            f"📊 **Yön:** {'🟢 ALIŞ (BUY)' if best['direction'] == 'BUY' else '🔴 SATIŞ (SELL)'}\n"
-            f"🎯 **Uğur/Dəqiqlik Xalı:** {best['score']} / 100\n\n"
+            f"📊 **Yön:** {'🟢 ALIŞ (BUY)' if best['direction'] == 'BUY' else '🔴 SATIŞ (SELL)'}\n\n"
             f"🔹 **Entry:** `{entry}`\n"
             f"🛑 **Stop Loss (SL):** `{sl}`\n"
             f"🎯 **Take Profit (TP):** `{tp}`\n\n"
