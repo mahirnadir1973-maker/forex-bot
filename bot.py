@@ -24,25 +24,29 @@ PAIRS = {
     "GÜMÜŞ (XAG/USD)": "SI=F"
 }
 
+def clean_data(df):
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    return df
+
 def analyze_best_pair():
     candidates = []
     
     for name, ticker in PAIRS.items():
         try:
-            # 1 Saatlıq data (Giriş üçün)
-            data_1h = yf.download(ticker, period="10d", interval="1h", progress=False)
-            # 1 Günlük data (Böyük trend təsdiqi üçün)
-            data_1d = yf.download(ticker, period="100d", interval="1d", progress=False)
+            # Data yükləmə
+            data_1h = clean_data(yf.download(ticker, period="10d", interval="1h", progress=False, auto_adjust=True))
+            data_1d = clean_data(yf.download(ticker, period="100d", interval="1d", progress=False, auto_adjust=True))
             
             if data_1h.empty or len(data_1h) < 30 or data_1d.empty or len(data_1d) < 30:
                 continue
             
-            close_1h = data_1h['Close'].squeeze()
-            high_1h = data_1h['High'].squeeze()
-            low_1h = data_1h['Low'].squeeze()
+            close_1h = data_1h['Close']
+            high_1h = data_1h['High']
+            low_1h = data_1h['Low']
             current_price = float(close_1h.iloc[-1])
             
-            close_1d = data_1d['Close'].squeeze()
+            close_1d = data_1d['Close']
             
             # İndikatorlar (1H)
             rsi = ta.momentum.RSIIndicator(close=close_1h, window=14).rsi().iloc[-1]
@@ -50,30 +54,29 @@ def analyze_best_pair():
             ema_slow = ta.trend.EMAIndicator(close=close_1h, window=21).ema_indicator().iloc[-1]
             atr = ta.volatility.AverageTrueRange(high=high_1h, low=low_1h, close=close_1h, window=14).average_true_range().iloc[-1]
             
-            # 1. ZƏİFLİK HƏLLİ: ADX ilə Trend Gücü
+            # ADX Və Günlük EMA
             adx_ind = ta.trend.ADXIndicator(high=high_1h, low=low_1h, close=close_1h, window=14)
             adx = adx_ind.adx().iloc[-1]
-            
-            # 2. ZƏİFLİK HƏLLİ: Günlük EMA 50 ilə Böyük Trend Təsdiqi
             ema_daily = ta.trend.EMAIndicator(close=close_1d, window=50).ema_indicator().iloc[-1]
             
-            # ADX < 20 olarsa bazar yataydır, riski azaltmaq üçün siqnalı keçirik
+            # Yatay bazar filtri
             if adx < 20:
                 continue
                 
             score = 0
             direction = None
             
-            # BUY Təhlili (Böyük trend də yuxarı olmalıdır)
-            if rsi <= 45 and ema_fast > ema_slow and current_price > ema_daily:
-                score = round((50 - rsi) * 2 + (adx / 2), 1)
+            # OPTİMALLAŞDIRILMIŞ ŞƏRTLƏR:
+            # BUY: RSI 55-dən kiçik, sürətli EMA yuxarıda, qiymət Günlük EMA50 üstündə
+            if 35 <= rsi <= 55 and ema_fast > ema_slow and current_price > ema_daily:
+                score = round((55 - rsi) * 1.5 + (adx / 2), 1)
                 direction = "BUY"
                 sl = current_price - (atr * 1.5)
                 tp = current_price + (atr * 3.0)
             
-            # SELL Təhlili (Böyük trend də aşağı olmalıdır)
-            elif rsi >= 55 and ema_fast < ema_slow and current_price < ema_daily:
-                score = round((rsi - 50) * 2 + (adx / 2), 1)
+            # SELL: RSI 45-dən böyük, sürətli EMA aşağıda, qiymət Günlük EMA50 altında
+            elif 45 <= rsi <= 65 and ema_fast < ema_slow and current_price < ema_daily:
+                score = round((rsi - 45) * 1.5 + (adx / 2), 1)
                 direction = "SELL"
                 sl = current_price + (atr * 1.5)
                 tp = current_price - (atr * 3.0)
@@ -88,7 +91,8 @@ def analyze_best_pair():
                     "tp": tp,
                     "adx": round(adx, 1)
                 })
-        except Exception:
+        except Exception as e:
+            logging.error(f"Xəta {name} paritetində: {e}")
             continue
             
     if candidates:
@@ -124,10 +128,13 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode="Markdown")
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Bot aktivdir! /signal yazaraq ən güclü və zəiflikləri bağlanmış siqnalı ala bilərsiniz.")
+    await update.message.reply_text("Bot aktivdir! /signal yazaraq ən güclü siqnalı ala bilərsiniz.")
 
 def main():
-    token = os.environ.get("TELEGRAM_TOKEN", "8814130355:AAEecRTzl8Yt6j-0hlE7VjBSbQY16t0SFwg")
+    token = os.environ.get("TELEGRAM_TOKEN")
+    if not token:
+        raise ValueError("TELEGRAM_TOKEN tapılmadı! Zəhmət olmasa mühit dəyişəninə elavə edin.")
+        
     app = Application.builder().token(token).build()
     
     app.add_handler(CommandHandler("start", start_command))
