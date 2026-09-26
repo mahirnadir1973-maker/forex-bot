@@ -67,14 +67,14 @@ def analyze_best_pair():
             direction = None
             
             # OPTİMALLAŞDIRILMIŞ ŞƏRTLƏR:
-            # BUY: RSI 55-dən kiçik, sürətli EMA yuxarıda, qiymət Günlük EMA50 üstündə
+            # BUY: RSI 35-55 arası, sürətli EMA yuxarıda, qiymət Günlük EMA50 üstündə
             if 35 <= rsi <= 55 and ema_fast > ema_slow and current_price > ema_daily:
                 score = round((55 - rsi) * 1.5 + (adx / 2), 1)
                 direction = "BUY"
                 sl = current_price - (atr * 1.5)
                 tp = current_price + (atr * 3.0)
             
-            # SELL: RSI 45-dən böyük, sürətli EMA aşağıda, qiymət Günlük EMA50 altında
+            # SELL: RSI 45-65 arası, sürətli EMA aşağıda, qiymət Günlük EMA50 altında
             elif 45 <= rsi <= 65 and ema_fast < ema_slow and current_price < ema_daily:
                 score = round((rsi - 45) * 1.5 + (adx / 2), 1)
                 direction = "SELL"
@@ -130,19 +130,6 @@ async def signal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Bot aktivdir! /signal yazaraq ən güclü siqnalı ala bilərsiniz.")
 
-def main():
-    token = os.environ.get("TELEGRAM_TOKEN")
-    if not token:
-        raise ValueError("TELEGRAM_TOKEN tapılmadı! Zəhmət olmasa mühit dəyişəninə elavə edin.")
-        
-    app = Application.builder().token(token).build()
-    
-    app.add_handler(CommandHandler("start", start_command))
-    app.add_handler(CommandHandler("signal", signal_command))
-    
-    app.run_polling()
-
-if __name__ == "__main__":
 def main():
     token = os.environ.get("TELEGRAM_TOKEN", "").strip()
     if not token:
